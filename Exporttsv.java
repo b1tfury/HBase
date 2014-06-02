@@ -1,118 +1,148 @@
+package com.serendio.Importtsv;
 import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
+import com.google.common.base.Splitter;
+import com.google.common.collect.Lists;
+
 import java.io.FileWriter;
 import java.io.PrintWriter;
-
-
-
-
+import java.util.ArrayList;
 
 public class Exporttsv {
-	public static void main(String[] args) throws IOException {
-	
-		if(args.length!=3)
+
+	final static String DEFAULT_COL_SEPRATOR = ",";
+	final static String DEAULT_SEPRATOR = ":";
+
+	static class Dump {		
+		private final  byte[][] families;
+		private final byte[][] qualifiers;
+		private final String[] datatypes ;
+		private byte[] row_key ;
+		private byte[] cell_value;
+
+
+		public  Dump(String[] args) throws IOException
 		{
-			System.out.println("Please provide the correct details in a order described below\n <table_name> <all columns which want to dump to csv in comma separated format <coloumn_family:column_qualfier:Output datatype>,..> <output_directory> ");
-			return ;
-		}
-		else
-		{	
-			String tbname = args[0];
-			String [] tokens = args[1].split(",");
-			FileWriter fw = new FileWriter(args[2]+".csv");
-			PrintWriter out = new PrintWriter(fw);
-			int rowcount = 0;
-			Configuration config = HBaseConfiguration.create();//conf obj created for reading from hbase-site.xml
-			HTable table = new HTable(config, tbname);
-			//scanning all rows
-			  Scan s = new Scan();
-			  ResultScanner scanner = table.getScanner(s);
+			final String tbname = args[0];
+			final String columnsSpecification = args[1];
+			FileWriter filewriter = new FileWriter(args[2]+".csv");
+			PrintWriter out = new PrintWriter(filewriter);
+			Configuration conf = HBaseConfiguration.create();
+			HTable table = new HTable(conf, tbname);
+			Scan s = new Scan();
+			ResultScanner scanner = table.getScanner(s);
+			ArrayList<String> columnStrings = Lists.newArrayList(Splitter.on(',').
+					trimResults().split(columnsSpecification));
+
+			families = new byte[columnStrings.size()][];
+			qualifiers = new byte[columnStrings.size()][];
+			datatypes = new String[columnStrings.size()];
+
+			for(int i =0;i<columnStrings.size();i++){
+				String str = columnStrings.get(i);
+				String[] parts = str.split(":");
+				if (parts.length != 3) {
+					System.out.println("Error in specifying columns");
+				} else {
+					families[i] = parts[0].getBytes();
+					qualifiers[i] = parts[1].getBytes();
+					datatypes[i] = parts[2];
+				}
+
+			}
 			try
 			{
-				for(Result rr = scanner.next(); rr != null; rr = scanner.next())
-				{
-					++rowcount;
-				}
-			}finally
-			{
-				   scanner.close();
-
-			}
-			for(int i =1;i<=rowcount;i++)
-			{
-				for(int j =0;j<tokens.length;j++)
-					{
-						String [] val= tokens[j].split(":");
-//						System.out.println(val[0]+" "+val[1]+" "+val[2]);
-						Get g = new Get(Bytes.toBytes(String.valueOf(i)));
-						Result r = table.get(g);
-						byte[] value = r.getValue(Bytes.toBytes(val[0]), Bytes.toBytes(val[1]));
-						String valueStr = Bytes.toString(value);
-				//		System.out.println(key+" "+val.substring(0, val.indexOf(':'))+" "+val.substring(val.indexOf(':')+1, val.length()));
-						switch (val[2]) {
-						case "Boolean":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file"+Boolean.parseBoolean(valueStr));
-							out.print(Boolean.parseBoolean(valueStr));
-							out.print(",");
-							break;
-						case "Double":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ Double.parseDouble(valueStr));
-							out.print(Double.parseDouble(valueStr));
-							out.print(",");
-							break;
-						case "Float":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ Float.parseFloat(valueStr));
-							out.print(Float.parseFloat(valueStr));
-							out.print(",");
-							break;
-						case "Integer":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ Integer.parseInt(valueStr));
-							out.print(Integer.parseInt(valueStr));
-							out.print(",");
-							break;
-						case "Long":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ Long.parseLong(valueStr));
-							out.print(Long.parseLong(valueStr));
-							out.print(",");
-							break;
-						case "String":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ valueStr);
-							out.print(valueStr);
-							out.print(",");
-							break;
-						case "Short":
-						//	System.out.println(valueStr);
-							System.out.println("adding input to file "+ Short.parseShort(valueStr));
-							out.print(Short.parseShort(valueStr));
-							out.print(",");
-							break;
-						default:
-							out.print(valueStr);
-							out.print(",");
-							break;
+				for(Result rr = scanner.next(); rr != null; rr = scanner.next()){
+					for(int i =0;i<columnStrings.size();i++){
+						cell_value = rr.getValue(families[i], qualifiers[i]);
+						try{
+							switch (datatypes[i]){
+							case "Boolean":
+								out.print(Bytes.toBoolean(cell_value)+",");
+								break;
+							case "Double":
+								out.print(Bytes.toDouble(cell_value)+",");
+								break;
+							case "Float":
+								out.print(Bytes.toFloat(cell_value)+",");
+								break;
+							case "Integer":
+								out.print(Bytes.toInt(cell_value)+",");
+								break;
+							case "Long":
+								out.print(Bytes.toLong(cell_value)+",");
+								break;
+							case "String":
+								out.print(Bytes.toString(cell_value)+",");
+								break;
+							case "Short":
+								out.print(Bytes.toShort(cell_value)+",");
+								break;
+							default:
+								out.print(Bytes.toString(cell_value)+",");
+								break;
+							}
 						}
-						
+						catch(Exception e){
+							e.printStackTrace();
+							out.print(Bytes.toString(cell_value)+",");
+						}
 					}
-				out.println();
-				out.flush();
-					}
+					out.println();
+					out.flush();
+				}
 				out.close();
 			}
-			
+			finally{
+				System.out.println("File Dumping is complete.");
+				scanner.close();
+			}
+		}
+		public byte[] getFamily(int idx) {
+			return families[idx];
+		}
+		public byte[] getQualifier(int idx) {
+			return qualifiers[idx];
+		}
+	}
+	/**
+	 * 'usage' message prints the error while passing the arguments 
+	 **/
+
+
+	private static void usage(final String errorMsg) {
+		if (errorMsg != null && errorMsg.length() > 0) {
+			System.err.println("ERROR: " + errorMsg);
+		}
+
 	}
 
+	public static void main(String[] args) throws IOException {
+		if (args.length < 2) {
+			usage("Wrong number of arguments: " + args.length);
+			System.exit(-1);
+		}
+		String columns[] = args[1].split(DEFAULT_COL_SEPRATOR);
+		if (columns == null) {
+			usage("No columns specified.");
+			System.exit(-1);
+		}
+		// Make sure one or more columns are specified
+		if (columns.length < 2) {
+			usage("One or more columns in addition to the row key are required");
+			System.exit(-1);
+		}
+
+		Dump d = new Dump(args);
+	}
 }
+
+
